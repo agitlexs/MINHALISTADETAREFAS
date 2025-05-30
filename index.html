@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8">
+  <title>Lista de Tarefas - Gerenciador de Tarefas Interativo e Moderno</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="dark-theme">
+  <div class="container" id="container-tarefas">
+    <header>
+      <h2>Lista de Tarefas</h2>
+    
+    </header>
+    
+    <!-- Formulário para adicionar nova tarefa -->
+    <form id="taskForm">
+      <input type="text" id="taskInput" placeholder="Nova tarefa..." required>
+      <select id="prioritySelect">
+        <option value="Média" selected>Média</option>
+        <option value="Alta">Alta</option>
+        <option value="Baixa">Baixa</option>
+      </select>
+      <input type="date" id="dueDate">
+      <button type="submit">Adicionar</button>
+      <div id="duplicateMsg" class="hidden">Tarefa duplicada!</div>
+    </form>
+    
+    <!-- Barra de busca e ordenação -->
+    <div id="searchSortContainer">
+      <input type="text" id="searchInput" placeholder="Buscar tarefas...">
+      <select id="sortSelect">
+        <option value="none" selected>Nenhum</option>
+        <option value="priority">Prioridade</option>
+        <option value="dueDate">Data de Vencimento</option>
+      </select>
+    </div>
+    
+    <!-- Botões de filtro -->
+    <div id="filters">
+      <button onclick="setFilter('todas')">Todas</button>
+      <button onclick="setFilter('pendentes')">Pendentes</button>
+      <button onclick="setFilter('concluidas')">Concluídas</button>
+    </div>
+    
+    <!-- Lista de tarefas -->
+    <ul id="taskList"></ul>
+    <div id="undoMsg" class="hidden">
+      Tarefa excluída.
+      <button id="undoBtn">Desfazer</button>
+    </div>
+  </div>
+
+  <style>
+/* Efeito de destaque ao concluir tarefa */
+@keyframes highlight {
+  0%   { background: #ffe082; }
+  100% { background: #28a745; }
+}
+li.completed.highlighted {
+  animation: highlight 0.7s;
+}
+#undoMsg {
+  background: #fff3cd;
+  color: #856404;
+  border: 1px solid #ffeeba;
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin: 10px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: center;
+}
+</style>
+
+<script>
+    /* Variáveis globais */
+    let tasks = [];
+    let currentFilter = 'todas';    // 'todas', 'pendentes', 'concluidas'
+    let sortOption = 'none';        // 'none', 'priority', 'dueDate'
+    let searchQuery = '';
+    // Definido como "night" para manter o visual clássico inicialmente
+    let currentTheme = 'night';
+    let lastDeletedTask = null;
+
+    /* Armazena as tarefas no localStorage */
+    function saveTasks() {
+      localStorage.setItem('tasks', JSON.stringify(tasks));
+    }
+    
+    function loadTasks() {
+      const stored = localStorage.getItem('tasks');
+      if (stored) {
+        tasks = JSON.parse(stored);
+      }
+    }
+    
+    /* Renderiza as tarefas aplicando filtro, busca e ordenação */
+    function renderTasks() {
+      const taskList = document.getElementById('taskList');
+      taskList.innerHTML = '';
+
+      let filteredTasks = tasks.filter(task => {
+        if (currentFilter === 'pendentes' && task.completed) return false;
+        if (currentFilter === 'concluidas' && !task.completed) return false;
+        return true;
+      });
+
+      // Aplica busca (ignora maiúsculas/minúsculas)
+      if (searchQuery.trim() !== '') {
+        filteredTasks = filteredTasks.filter(task =>
+          task.text.toLowerCase().includes(searchQuery.toLowerCase())
+        );
+      }
+
+      // Ordenação por prioridade ou data
+      if (sortOption === 'priority') {
+        const order = { 'Alta': 1, 'Média': 2, 'Baixa': 3 };
+        filteredTasks.sort((a, b) => order[a.priority] - order[b.priority]);
+      } else if (sortOption === 'dueDate') {
+        filteredTasks.sort((a, b) => {
+          if (a.dueDate === b.dueDate) return 0;
+          if (a.dueDate === "") return 1;
+          if (b.dueDate === "") return -1;
+          return new Date(a.dueDate) - new Date(b.dueDate);
+        });
+      }
+
+      filteredTasks.forEach(task => {
+        const li = createTaskElement(task);
+        taskList.appendChild(li);
+      });
+    }
+    
+    /* Cria o elemento de tarefa (li) */
+    function createTaskElement(task) {
+      const li = document.createElement('li');
+      li.dataset.id = task.id;
+      li.className = task.completed ? 'completed' : 'pending';
+      
+      // Checkbox para marcar tarefa como concluída
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = task.completed;
+      checkbox.addEventListener('change', () => {
+        task.completed = checkbox.checked;
+        li.className = task.completed ? 'completed' : 'pending';
+        saveTasks();
+        // Efeito visual ao concluir
+        if (task.completed) {
+          li.classList.add('highlighted');
+          setTimeout(() => li.classList.remove('highlighted'), 700);
+        }
+        renderTasks();
+      });
+      
+      // Texto da tarefa
+      const spanText = document.createElement('span');
+      spanText.className = 'taskText';
+      spanText.textContent = task.text;
+      
+      // Detalhes: prioridade e data de vencimento
+      const details = document.createElement('span');
+      details.className = 'taskDetails';
+      details.textContent = ` [Prioridade: ${task.priority}]`;
+      if (task.dueDate) {
+        details.textContent += ` [Vencimento: ${task.dueDate}]`;
+      }
+      
+      // Botão de editar
+      const editBtn = document.createElement('button');
+      editBtn.textContent = 'Editar';
+      editBtn.className = 'editBtn';
+      editBtn.addEventListener('click', () => {
+        enterEditMode(li, task);
+      });
+      
+      // Botão de excluir (com confirmação e desfazer)
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Excluir';
+      deleteBtn.className = 'deleteBtn';
+      deleteBtn.addEventListener('click', () => {
+        if (confirm('Tem certeza que deseja excluir essa tarefa?')) {
+          lastDeletedTask = { ...task };
+          tasks = tasks.filter(t => t.id !== task.id);
+          saveTasks();
+          renderTasks();
+          showUndo();
+        }
+      });
+      
+      li.appendChild(checkbox);
+      li.appendChild(spanText);
+      li.appendChild(details);
+      li.appendChild(editBtn);
+      li.appendChild(deleteBtn);
+      return li;
+    }
+    
+    // Mostra mensagem de desfazer exclusão
+    function showUndo() {
+      const undoMsg = document.getElementById('undoMsg');
+      undoMsg.classList.remove('hidden');
+      clearTimeout(undoMsg._timeout);
+      undoMsg._timeout = setTimeout(() => {
+        undoMsg.classList.add('hidden');
+        lastDeletedTask = null;
+      }, 4000);
+    }
+    
+    /* Modo de edição inline para uma tarefa */
+    function enterEditMode(li, task) {
+      li.innerHTML = '';
+      
+      const textInput = document.createElement('input');
+      textInput.type = 'text';
+      textInput.value = task.text;
+      
+      const prioritySelect = document.createElement('select');
+      ['Alta', 'Média', 'Baixa'].forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p;
+        opt.textContent = p;
+        if (p === task.priority) opt.selected = true;
+        prioritySelect.appendChild(opt);
+      });
+      
+      const dueDateInput = document.createElement('input');
+      dueDateInput.type = 'date';
+      dueDateInput.value = task.dueDate;
+      
+      const saveBtn = document.createElement('button');
+      saveBtn.textContent = 'Salvar';
+      saveBtn.addEventListener('click', () => {
+        const newText = textInput.value.trim();
+        if (newText === '') {
+          alert('O texto da tarefa não pode ser vazio');
+          return;
+        }
+        // Verifica duplicidade (ignorando a tarefa atual)
+        const duplicate = tasks.some(t => t.id !== task.id && t.text.toLowerCase() === newText.toLowerCase());
+        if (duplicate) {
+          alert('Tarefa duplicada!');
+          return;
+        }
+        task.text = newText;
+        task.priority = prioritySelect.value;
+        task.dueDate = dueDateInput.value;
+        saveTasks();
+        renderTasks();
+      });
+      
+      const cancelBtn = document.createElement('button');
+      cancelBtn.textContent = 'Cancelar';
+      cancelBtn.addEventListener('click', () => {
+        renderTasks();
+      });
+      
+      li.appendChild(textInput);
+      li.appendChild(prioritySelect);
+      li.appendChild(dueDateInput);
+      li.appendChild(saveBtn);
+      li.appendChild(cancelBtn);
+    }
+    
+    /* Define o filtro ativo e re-renderiza */
+    function setFilter(filter) {
+      currentFilter = filter;
+      renderTasks();
+    }
+
+    /* Eventos */
+    document.getElementById('taskForm').addEventListener('submit', e => {
+      e.preventDefault();
+      const taskInput = document.getElementById('taskInput');
+      const prioritySelect = document.getElementById('prioritySelect');
+      const dueDateInput = document.getElementById('dueDate');
+      const duplicateMsg = document.getElementById('duplicateMsg');
+      
+      let text = taskInput.value.trim();
+      if (text === '') return;
+      
+      // Verifica duplicidade (texto em minúsculas)
+      const duplicate = tasks.some(task => task.text.toLowerCase() === text.toLowerCase());
+      if (duplicate) {
+        duplicateMsg.classList.remove('hidden');
+        setTimeout(() => {
+          duplicateMsg.classList.add('hidden');
+        }, 2000);
+        return;
+      }
+      
+      // Validação de data de vencimento (não permite datas passadas)
+      if (dueDateInput.value) {
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const dueDate = new Date(dueDateInput.value);
+        if (dueDate < today) {
+          alert('A data de vencimento não pode ser no passado!');
+          return;
+        }
+      }
+      
+      const newTask = {
+        id: Date.now(),
+        text: text,
+        completed: false,
+        priority: prioritySelect.value,
+        dueDate: dueDateInput.value
+      };
+      
+      tasks.push(newTask);
+      saveTasks();
+      renderTasks();
+      
+      // Limpar os campos do formulário
+      taskInput.value = '';
+      dueDateInput.value = '';
+    });
+    
+    // Busca (filtra conforme o texto digitado)
+    document.getElementById('searchInput').addEventListener('input', e => {
+      searchQuery = e.target.value;
+      renderTasks();
+    });
+    
+    // Ordenação (por prioridade ou data de vencimento)
+    document.getElementById('sortSelect').addEventListener('change', e => {
+      sortOption = e.target.value;
+      renderTasks();
+    });
+    
+    // Evento do botão desfazer
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      if (lastDeletedTask) {
+        tasks.push(lastDeletedTask);
+        saveTasks();
+        renderTasks();
+        lastDeletedTask = null;
+        document.getElementById('undoMsg').classList.add('hidden');
+      }
+    });
+    
+    // Carrega tarefas salvas e renderiza na inicialização
+    loadTasks();
+    renderTasks();
+  </script>
+</body>
+</html>
