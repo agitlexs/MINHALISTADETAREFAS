@@ -200,6 +200,22 @@ ul#taskList li button.deleteBtn:hover {
   display: none !important;
 }
 
+/* Estilo para inputs de data no tema escuro */
+body.dark-theme input[type="date"] {
+  background: #181c2f;
+  color: #eee;
+  border: 1px solid #232946;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 1rem;
+  transition: border 0.2s;
+}
+body.dark-theme input[type="date"]:focus {
+  border: 1.5px solid #ffe066;
+  box-shadow: 0 0 0 3px rgba(255, 224, 102, 0.5);
+  outline: none;
+}
+
 /* Responsividade: layout adequado em telas menores */
 @media (max-width: 520px) {
   .container {
