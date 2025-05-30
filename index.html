@@ -4,6 +4,40 @@
   <meta charset="UTF-8">
   <title>Lista de Tarefas - Gerenciador de Tarefas Interativo e Moderno</title>
   <link rel="stylesheet" href="style.css">
+  <style>
+/* Efeito de destaque ao concluir tarefa */
+@keyframes highlight {
+  0%   { background: #ffe082; }
+  100% { background: #28a745; }
+}
+li.completed.highlighted {
+  animation: highlight 0.7s;
+}
+
+/* Para inputs no modo escuro */
+.dark-input,
+.dark-input select {
+  background: #222;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-right: 6px;
+}
+
+/* Estiliza especificamente o select no modo escuro */
+select.dark-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background: #222;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 4px;
+  padding: 4px 8px;
+  margin-right: 6px;
+}
+  </style>
 </head>
 <body class="dark-theme">
   <div class="container" id="container-tarefas">
@@ -38,8 +72,8 @@
     <!-- Botões de filtro -->
     <div id="filters">
       <button onclick="setFilter('todas')">Todas</button>
-      <button onclick="setFilter('pendentes')">Pendentes</button>
-      <button onclick="setFilter('concluidas')">Concluídas</button>
+      <button class="btn-pendentes" onclick="setFilter('pendentes')">Pendentes</button>
+      <button class="btn-concluidas" onclick="setFilter('concluidas')">Concluídas</button>
     </div>
     
     <!-- Lista de tarefas -->
@@ -47,40 +81,16 @@
     <div id="undoMsg" class="hidden">
       Tarefa excluída.
       <button id="undoBtn">Desfazer</button>
+      <span id="undoTimer">5</span>s
     </div>
   </div>
 
-  <style>
-/* Efeito de destaque ao concluir tarefa */
-@keyframes highlight {
-  0%   { background: #ffe082; }
-  100% { background: #28a745; }
-}
-li.completed.highlighted {
-  animation: highlight 0.7s;
-}
-#undoMsg {
-  background: #fff3cd;
-  color: #856404;
-  border: 1px solid #ffeeba;
-  padding: 8px 16px;
-  border-radius: 4px;
-  margin: 10px 0;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: center;
-}
-</style>
-
-<script>
+  <script>
     /* Variáveis globais */
     let tasks = [];
     let currentFilter = 'todas';    // 'todas', 'pendentes', 'concluidas'
     let sortOption = 'none';        // 'none', 'priority', 'dueDate'
     let searchQuery = '';
-    // Definido como "night" para manter o visual clássico inicialmente
-    let currentTheme = 'night';
     let lastDeletedTask = null;
 
     /* Armazena as tarefas no localStorage */
@@ -200,22 +210,37 @@ li.completed.highlighted {
     // Mostra mensagem de desfazer exclusão
     function showUndo() {
       const undoMsg = document.getElementById('undoMsg');
+      const undoTimer = document.getElementById('undoTimer');
+      let seconds = 5;
+      undoTimer.textContent = seconds;
       undoMsg.classList.remove('hidden');
       clearTimeout(undoMsg._timeout);
+      clearInterval(undoMsg._interval);
+
+      undoMsg._interval = setInterval(() => {
+        seconds--;
+        undoTimer.textContent = seconds;
+        if (seconds <= 0) {
+          clearInterval(undoMsg._interval);
+        }
+      }, 1000);
+
       undoMsg._timeout = setTimeout(() => {
         undoMsg.classList.add('hidden');
         lastDeletedTask = null;
-      }, 4000);
+        clearInterval(undoMsg._interval);
+      }, 5000);
     }
     
     /* Modo de edição inline para uma tarefa */
     function enterEditMode(li, task) {
       li.innerHTML = '';
-      
+      li.classList.add('editing'); // Adiciona a classe para aplicar o estilo correto
+
       const textInput = document.createElement('input');
       textInput.type = 'text';
       textInput.value = task.text;
-      
+
       const prioritySelect = document.createElement('select');
       ['Alta', 'Média', 'Baixa'].forEach(p => {
         const opt = document.createElement('option');
@@ -224,20 +249,21 @@ li.completed.highlighted {
         if (p === task.priority) opt.selected = true;
         prioritySelect.appendChild(opt);
       });
-      
+
       const dueDateInput = document.createElement('input');
       dueDateInput.type = 'date';
       dueDateInput.value = task.dueDate;
-      
+
       const saveBtn = document.createElement('button');
       saveBtn.textContent = 'Salvar';
+      saveBtn.className = 'editBtn';
+
       saveBtn.addEventListener('click', () => {
         const newText = textInput.value.trim();
         if (newText === '') {
           alert('O texto da tarefa não pode ser vazio');
           return;
         }
-        // Verifica duplicidade (ignorando a tarefa atual)
         const duplicate = tasks.some(t => t.id !== task.id && t.text.toLowerCase() === newText.toLowerCase());
         if (duplicate) {
           alert('Tarefa duplicada!');
@@ -249,13 +275,14 @@ li.completed.highlighted {
         saveTasks();
         renderTasks();
       });
-      
+
       const cancelBtn = document.createElement('button');
       cancelBtn.textContent = 'Cancelar';
+      cancelBtn.className = 'deleteBtn';
       cancelBtn.addEventListener('click', () => {
         renderTasks();
       });
-      
+
       li.appendChild(textInput);
       li.appendChild(prioritySelect);
       li.appendChild(dueDateInput);
